@@ -46,18 +46,15 @@ const TaskList = () => {
     await AsyncStorage.getItem('visibleTasks');
     await AsyncStorage.getItem('showDone');
     await AsyncStorage.getItem('isModalOpen');
-    console.warn('saving');
     try {
       await AsyncStorage.setItem('tasks', JSON.stringify(tasks));
       await AsyncStorage.setItem('visibleTasks', JSON.stringify(visibleTasks));
       await AsyncStorage.setItem('showDone', JSON.stringify(showDone));
       await AsyncStorage.setItem('isModalOpen', JSON.stringify(isModalOpen));
     } catch (error) {
-      console.warn('error');
     }
   }
   const handleLoadFromStorage = async () => {
-    console.warn('loading')
     try {
       const newTasks = JSON.parse(await AsyncStorage.getItem('tasks'));
       const newVisibleTasks = JSON.parse(await AsyncStorage.getItem('visibleTasks'));
@@ -68,7 +65,6 @@ const TaskList = () => {
       setShowDone(newShowDone);
       setIsModalOpen(newIsModalOpen);
     } catch (error) {
-      console.warn('error');
     }
   }
 
