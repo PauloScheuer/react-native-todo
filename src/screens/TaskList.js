@@ -4,26 +4,30 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import moment from 'moment';
 import 'moment/locale/pt-br';
 import Icon from 'react-native-vector-icons/FontAwesome';
+import axios from 'axios';
+import { server, showError } from '../common';
 
 import todayImage from '../../assets/imgs/today.jpg';
+import tomorrowImage from '../../assets/imgs/tomorrow.jpg';
+import weekImage from '../../assets/imgs/week.jpg';
+import monthImage from '../../assets/imgs/month.jpg';
 import globalStyles from '../styles';
 import Task from '../components/Task';
 import AddTask from './AddTask';
 
-const TaskList = () => {
+const TaskList = ({ title, daysAhead, navigation }) => {
   const [tasks, setTasks] = useState([]);
   const [showDone, setShowDone] = useState(true);
   const [visibleTasks, setVisibletasks] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const handleDone = (id) => {
-    const newTasks = [...tasks];
-    newTasks.forEach(task => {
-      if (task.id === id) {
-        task.doneAt = task.doneAt ? null : new Date();
-      }
-    });
-    setTasks(newTasks);
+  const handleDone = async (id) => {
+    try {
+      await axios.put(`${server}/tasks/${id}/toggle`);
+      handleRequestFromServer();
+    } catch (error) {
+      showError(error);
+    }
   }
   const handleShowDone = () => {
     setShowDone(!showDone);
@@ -42,52 +46,75 @@ const TaskList = () => {
   }
 
   const handleSaveToStorage = async () => {
-    await AsyncStorage.getItem('tasks');
-    await AsyncStorage.getItem('visibleTasks');
     await AsyncStorage.getItem('showDone');
-    await AsyncStorage.getItem('isModalOpen');
     try {
-      await AsyncStorage.setItem('tasks', JSON.stringify(tasks));
-      await AsyncStorage.setItem('visibleTasks', JSON.stringify(visibleTasks));
       await AsyncStorage.setItem('showDone', JSON.stringify(showDone));
-      await AsyncStorage.setItem('isModalOpen', JSON.stringify(isModalOpen));
     } catch (error) {
+      console.warn(error);
     }
   }
   const handleLoadFromStorage = async () => {
     try {
-      const newTasks = JSON.parse(await AsyncStorage.getItem('tasks'));
-      const newVisibleTasks = JSON.parse(await AsyncStorage.getItem('visibleTasks'));
       const newShowDone = JSON.parse(await AsyncStorage.getItem('showDone'));
-      const newIsModalOpen = JSON.parse(await AsyncStorage.getItem('isModalOpen'));
-      setTasks(newTasks);
-      setVisibletasks(newVisibleTasks);
       setShowDone(newShowDone);
-      setIsModalOpen(newIsModalOpen);
     } catch (error) {
     }
   }
 
-  const handleAdd = (newTask) => {
-    if (!newTask.desc || !newTask.desc.trim()) {
+  const handleAdd = async ({ desc, date }) => {
+    if (!desc || !desc.trim()) {
       Alert.alert('Dados Inválidos', 'Descrição não informada');
       return;
     }
 
-    const newTasks = [...tasks];
-    newTasks.push({
-      id: Math.random(),
-      desc: newTask.desc,
-      estimateAt: newTask.date
-    });
+    try {
+      await axios.post(`${server}/tasks`, {
+        desc,
+        estimateAt: date,
+      });
 
-    setTasks(newTasks);
-    setIsModalOpen(false);
+      setIsModalOpen(false);
+      handleRequestFromServer();
+    } catch (error) {
+      showError(error);
+    }
+
   }
 
-  const handleDelete = (id) => {
-    const newTasks = tasks.filter(task => task.id !== id);
-    setTasks(newTasks);
+  const handleDelete = async (id) => {
+    try {
+      await axios.delete(`${server}/tasks/${id}`)
+      handleRequestFromServer();
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  const handleRequestFromServer = async () => {
+    try {
+      const maxDate = moment().add({ days: daysAhead }).format('YYYY-MM-DD 23:59:59');
+      const res = await axios.get(`${server}/tasks?date=${maxDate}`);
+      setTasks(res.data);
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  const getImage = () => {
+    switch (daysAhead) {
+      case 0: return todayImage
+      case 1: return tomorrowImage
+      case 7: return weekImage
+      default: return monthImage
+    }
+  }
+  const getColor = () => {
+    switch (daysAhead) {
+      case 0: return globalStyles.colors.today
+      case 1: return globalStyles.colors.tomorrow
+      case 7: return globalStyles.colors.week
+      default: return globalStyles.colors.month
+    }
   }
 
   useEffect(() => {
@@ -96,6 +123,7 @@ const TaskList = () => {
 
   useEffect(() => {
     handleLoadFromStorage();
+    handleRequestFromServer();
     return () => {
       handleSaveToStorage();
     }
@@ -109,14 +137,17 @@ const TaskList = () => {
         onCancel={() => setIsModalOpen(false)}
         onSave={handleAdd}
       />
-      <ImageBackground source={todayImage} style={styles.background}>
+      <ImageBackground source={getImage()} style={styles.background}>
         <View style={styles.iconBar}>
+          <TouchableOpacity onPress={() => navigation.openDrawer()}>
+            <Icon name='bars' color={globalStyles.colors.secondary} size={20} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleShowDone}>
             <Icon name={showDone ? 'eye' : 'eye-slash'} color={globalStyles.colors.secondary} size={20} />
           </TouchableOpacity>
         </View>
         <View style={styles.titleBar}>
-          <Text style={styles.title}>Hoje</Text>
+          <Text style={styles.title}>{title}</Text>
           <Text style={styles.subtitle}>{today}</Text>
         </View>
       </ImageBackground>
@@ -128,7 +159,7 @@ const TaskList = () => {
             return <Task {...item} onToggle={handleDone} onDelete={handleDelete} />
           }} />
       </View>
-      <TouchableOpacity activeOpacity={0.7} style={styles.addButton} onPress={() => setIsModalOpen(true)}>
+      <TouchableOpacity activeOpacity={0.7} style={[styles.addButton, { backgroundColor: getColor() }]} onPress={() => setIsModalOpen(true)}>
         <Icon name="plus" size={20} color={globalStyles.colors.secondary} />
       </TouchableOpacity>
     </View >
@@ -141,10 +172,10 @@ const styles = StyleSheet.create({
     flex: 1
   },
   background: {
-    flex: 3
+    flex: 4
   },
   taskContainer: {
-    flex: 7
+    flex: 6
   },
   titleBar: {
     flex: 1,
@@ -167,8 +198,8 @@ const styles = StyleSheet.create({
   iconBar: {
     flexDirection: 'row',
     marginHorizontal: 20,
-    justifyContent: 'flex-end',
-    marginTop: 10
+    justifyContent: 'space-between',
+    marginTop: 20
   },
   addButton: {
     position: 'absolute',
@@ -177,7 +208,6 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: globalStyles.colors.today,
     justifyContent: 'center',
     alignItems: 'center'
   }
